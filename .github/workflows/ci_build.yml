@@ -30,9 +30,6 @@ jobs:
           sdkmanager --install "build-tools;34.0.0"
           sdkmanager --install "cmdline-tools;latest"
 
-      - name: Gradle permission
-        run: chmod +x gradlew
-
       - name: Build
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
