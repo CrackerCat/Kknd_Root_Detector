@@ -130,7 +130,10 @@ class RootDetector(private val context: Context) {
         )
         val items = mutableListOf<DetectionItem>()
         val total = checks.size + 1 
-
+        items.add(ZygiskDetector().detect())
+        items.add(OverlayFsDetector().detect())
+        items.add(MountNamespaceDetector().detect())
+        
         checks.forEachIndexed { i, check ->
             items += check()
             progressCallback(((i + 1) * 100) / total)
