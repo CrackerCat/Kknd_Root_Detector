@@ -11,3 +11,6 @@ You can download the latest version of the app from the [releases page](https://
 ## Preview
 <img src="https://github.com/juanma0511/Android_Root_Detector/blob/main/art/preview.jpg" width="350">
 
+## Credits
+[Native Detector](https://github.com/reveny/Android-Native-Root-Detector)
+
