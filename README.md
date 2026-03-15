@@ -1,6 +1,5 @@
 # Android Root Detector
 
-<<<<<<< HEAD
 Android Root Detector is a lightweight Android application that checks whether a device may be rooted or running in a potentially insecure environment.
 
 The project demonstrates common techniques used by security‑sensitive Android apps to detect root access and system modifications.
