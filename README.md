@@ -17,9 +17,11 @@ environment.
 The project demonstrates common techniques used by security‑sensitive
 Android apps to detect root access and system modifications.
 
-This project is intended mainly for: - Android security learning -
-Developers implementing root detection - Reverse engineering practice -
-Educational demonstrations
+This project is intended mainly for: 
+- Android security learning 
+- Developers implementing root detection 
+- Reverse engineering practice 
+- Educational demonstrations
 
 ------------------------------------------------------------------------
 
@@ -80,7 +82,7 @@ Or build from the command line:
 
 The generated APK will be located at:
 
-    app/build/outputs/apk/debug/app-debug.apk
+    app/build/outputs/apk/debug/*.apk
 
 ------------------------------------------------------------------------
 
@@ -124,7 +126,7 @@ If you find a bug:
 ## Disclaimer
 
 This project is provided for **educational and research purposes only**.
+
 Do not use it to bypass security protections in applications without authorization.
-Do not use it to bypass security protections in applications without
-authorization.
+
 

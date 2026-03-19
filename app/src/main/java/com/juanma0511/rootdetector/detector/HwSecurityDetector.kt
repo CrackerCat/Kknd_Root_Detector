@@ -33,10 +33,6 @@ class HwSecurityDetector(private val context: Context) {
             ::checkEncryptionState,
             ::checkSecurityPatchLevel
         )
-        if (isSamsungDevice()) {
-            checks += ::checkSamsungKnox
-        }
-
         val items = mutableListOf<HwCheckItem>()
         val total = checks.size.coerceAtLeast(1)
         var done = 0
@@ -448,75 +444,6 @@ class HwSecurityDetector(private val context: Context) {
             expected = "Within last 12 months",
             detail = if (!ok) "Patch older than 12 months — may be vulnerable to known CVEs" else null
         )
-    }
-
-    private fun checkSamsungKnox(): HwCheckItem {
-        val warrantyBit = getProp("ro.boot.warranty_bit")
-            .ifEmpty { getProp("ro.warranty_bit") }
-            .ifEmpty { "unknown" }
-        val knoxVersion = getProp("ro.config.knox")
-            .ifEmpty { getProp("ro.config.knox2") }
-            .ifEmpty { getProp("ro.config.timaversion") }
-        val kgState = getProp("ro.boot.kg.state")
-            .ifEmpty { getProp("sys.knox.kg.state") }
-        val hasKnoxPackage = listOf(
-            "com.samsung.android.knox.containercore",
-            "com.samsung.android.knox.attestation",
-            "com.samsung.android.knox.kpecore",
-            "com.samsung.klmsagent"
-        ).any { packageName ->
-            try {
-                context.packageManager.getPackageInfo(packageName, 0)
-                true
-            } catch (_: Exception) {
-                false
-            }
-        }
-
-        val status = when {
-            warrantyBit == "1" -> CheckStatus.FAIL
-            warrantyBit == "0" && (knoxVersion.isNotEmpty() || hasKnoxPackage) -> CheckStatus.PASS
-            knoxVersion.isNotEmpty() || hasKnoxPackage || kgState.isNotEmpty() -> CheckStatus.WARN
-            else -> CheckStatus.UNKNOWN
-        }
-
-        val value = when {
-            warrantyBit == "1" -> "Warranty bit tripped (0x1)"
-            warrantyBit == "0" -> "Warranty bit intact (0x0)"
-            else -> "Knox state not fully exposed"
-        }
-
-        val detail = buildString {
-            if (knoxVersion.isNotEmpty()) append("Knox version: $knoxVersion")
-            if (kgState.isNotEmpty()) {
-                if (isNotEmpty()) append("\n")
-                append("KG state: $kgState")
-            }
-            if (hasKnoxPackage) {
-                if (isNotEmpty()) append("\n")
-                append("Samsung Knox framework packages detected")
-            }
-            if (warrantyBit == "1") {
-                if (isNotEmpty()) append("\n")
-                append("Samsung Knox warranty bit is tripped")
-            }
-        }.ifEmpty { null }
-
-        return HwCheckItem(
-            id = "samsung_knox",
-            name = "Samsung Knox State",
-            group = HwGroup.KNOX,
-            description = "Samsung-only Knox warranty and framework state",
-            status = status,
-            value = value,
-            expected = "Warranty bit intact (0x0)",
-            detail = detail
-        )
-    }
-
-    private fun isSamsungDevice(): Boolean {
-        return Build.MANUFACTURER.equals("samsung", ignoreCase = true) ||
-            Build.BRAND.equals("samsung", ignoreCase = true)
     }
 
     private fun getProp(key: String): String = try {

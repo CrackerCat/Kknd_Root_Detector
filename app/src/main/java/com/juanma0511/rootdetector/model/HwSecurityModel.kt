@@ -17,7 +17,6 @@ enum class HwGroup {
     KEYSTORE,
     BOOT,
     VBMETA,
-    KNOX,
     SYSTEM_PROPS
 }
 

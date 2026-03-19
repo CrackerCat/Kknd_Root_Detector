@@ -1,4 +1,3 @@
 <resources>
-    <!-- Compose maneja todo el theming — solo necesitamos un tema base de AppCompat -->
     <style name="Theme.RootDetector" parent="Theme.AppCompat.DayNight.NoActionBar" />
 </resources>
