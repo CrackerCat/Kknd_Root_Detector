@@ -77,14 +77,6 @@ class RootDetector(private val context: Context) {
         "io.github.muntashirakon.AppManager.debug" to "App Manager Debug"
     )
 
-    private val oplusExPrefixes = listOf(
-        "com.oplus.ex",
-        "com.coloros.ex",
-        "com.heytap.ex",
-        "com.oneplus.ex",
-        "com.realme.ex"
-    )
-
     private val magiskPaths = listOf(
         "/sbin/.magisk", "/sbin/.core/mirror", "/sbin/.core/img",
         "/data/adb/magisk", "/data/adb/magisk.img", "/data/adb/magisk.db",
@@ -110,11 +102,13 @@ class RootDetector(private val context: Context) {
             ::checkRootPackages,
             ::checkPatchedApps,
             ::checkWarningApps,
+            ::checkOplusPackages,
             ::checkBuildTags,
             ::checkDangerousProps,
             ::checkRootBinaries,
             ::checkWritablePaths,
             ::checkMagiskFiles,
+            ::checkOplusDirectories,
             ::checkFrida,
             ::checkEmulator,
             ::checkMountPoints,
@@ -167,10 +161,11 @@ class RootDetector(private val context: Context) {
 
     private fun checkSuBinaries(): List<DetectionItem> {
         val found = suPaths.filter { File(it).exists() }
+        val (regularFound, _) = splitOplusMatches(found)
         return listOf(det(
             "su_binary", "SU Binary Paths", DetectionCategory.SU_BINARIES, Severity.HIGH,
             "Checks for su binary in 17 known root paths",
-            found.isNotEmpty(), found.joinToString("\n").ifEmpty { null }
+            regularFound.isNotEmpty(), regularFound.joinToString("\n").ifEmpty { null }
         ))
     }
 
@@ -183,11 +178,11 @@ class RootDetector(private val context: Context) {
                 pm.getLaunchIntentForPackage(pkg) != null -> found += "$pkg (launchable)"
             }
         }
-        val filteredFound = found.filterNot(::isOplusExPackage)
+        val (regularFound, _) = splitOplusMatches(found)
         return listOf(det(
             "root_apps", "Root Manager Apps", DetectionCategory.ROOT_APPS, Severity.HIGH,
             "Magisk, KernelSU, APatch, SuperSU, LSPosed and 50+ known packages",
-            filteredFound.isNotEmpty(), filteredFound.joinToString("\n").ifEmpty { null }
+            regularFound.isNotEmpty(), regularFound.joinToString("\n").ifEmpty { null }
         ))
     }
 
@@ -200,11 +195,11 @@ class RootDetector(private val context: Context) {
                 pm.getLaunchIntentForPackage(pkg) != null -> found += "$pkg (launchable)"
             }
         }
-        val filteredFound = found.filterNot(::isOplusExPackage)
+        val (regularFound, _) = splitOplusMatches(found)
         return listOf(det(
             "patched_apps", "Patched / Modified Apps", DetectionCategory.ROOT_APPS, Severity.MEDIUM,
             "ReVanced, CorePatch, Play Integrity Fix, TrickyStore, HMA, LSPosed and companion tools",
-            filteredFound.isNotEmpty(), filteredFound.joinToString("\n").ifEmpty { null }
+            regularFound.isNotEmpty(), regularFound.joinToString("\n").ifEmpty { null }
         ))
     }
 
@@ -217,18 +212,29 @@ class RootDetector(private val context: Context) {
                 pm.getLaunchIntentForPackage(pkg) != null -> found += "$label ($pkg launchable)"
             }
         }
+        return listOf(det(
+            "warning_apps", "Non-Rooted Power Apps", DetectionCategory.ROOT_APPS, Severity.LOW,
+            "Shizuku, Termux, MT Manager, LADB and similar tools are not root by themselves, but they are useful for debugging, shell access and package editing",
+            found.isNotEmpty(), found.joinToString("\n").ifEmpty { null }
+        ))
+    }
+
+    private fun checkOplusPackages(): List<DetectionItem> {
+        val found = linkedSetOf<String>()
+        val pm = context.packageManager
         try {
             @Suppress("DEPRECATION")
             val installedPackages = pm.getInstalledPackages(PackageManager.GET_META_DATA or PackageManager.MATCH_UNINSTALLED_PACKAGES)
-            installedPackages
-                .map { it.packageName }
-                .filter(::isOplusExPackage)
-                .sorted()
-                .forEach { found += "OplusEx utility ($it)" }
+            installedPackages.forEach { info ->
+                val packageName = info.packageName
+                if (isOplusMarker(packageName) && pm.getLaunchIntentForPackage(packageName) != null) {
+                    found += "$packageName (launchable)"
+                }
+            }
         } catch (_: Exception) {}
         return listOf(det(
-            "warning_apps", "Non-Rooted Power Apps", DetectionCategory.ROOT_APPS, Severity.LOW,
-            "Shizuku, Termux, MT Manager, LADB, OplusEx utilities and similar tools are not root by themselves, but they are useful for debugging, shell access and vendor maintenance",
+            "oplus_apps", "Oplus / OplusEx Apps", DetectionCategory.ROOT_APPS, Severity.LOW,
+            "Apps whose package names contain oplu or oplusex are treated as low-severity vendor utilities unless stronger root evidence also exists",
             found.isNotEmpty(), found.joinToString("\n").ifEmpty { null }
         ))
     }
@@ -261,10 +267,11 @@ class RootDetector(private val context: Context) {
                 }
             }
         }
+        val (regularFound, _) = splitOplusMatches(found)
         return listOf(det(
             "root_binaries", "Root Binaries", DetectionCategory.BUSYBOX, Severity.HIGH,
             "Searches for su, busybox, magisk, resetprop, KernelSU and APatch binaries in extended paths",
-            found.isNotEmpty(), found.take(10).joinToString("\n").ifEmpty { null }
+            regularFound.isNotEmpty(), regularFound.take(10).joinToString("\n").ifEmpty { null }
         ))
     }
 
@@ -292,10 +299,11 @@ class RootDetector(private val context: Context) {
                 }
             }
         } catch (_: Exception) {}
+        val (regularWritable, _) = splitOplusMatches(writable)
         return listOf(det(
             "rw_paths", "Writable System Paths", DetectionCategory.WRITABLE_PATHS, Severity.HIGH,
             "System, vendor and product partitions should not be writable or overlaid on stock builds",
-            writable.isNotEmpty(), writable.joinToString("\n").ifEmpty { null }
+            regularWritable.isNotEmpty(), regularWritable.joinToString("\n").ifEmpty { null }
         ))
     }
 
@@ -306,9 +314,40 @@ class RootDetector(private val context: Context) {
                 found += path
             }
         }
+        val (regularFound, _) = splitOplusMatches(found)
         return listOf(det(
             "magisk_files", "Magisk / KSU / APatch Files", DetectionCategory.MAGISK, Severity.HIGH,
             "Checks Magisk, KernelSU and APatch artifacts under /data/adb, /dev and ramdisk mirrors",
+            regularFound.isNotEmpty(), regularFound.joinToString("\n").ifEmpty { null }
+        ))
+    }
+
+    private fun checkOplusDirectories(): List<DetectionItem> {
+        val found = linkedSetOf<String>()
+        val candidatePaths = linkedSetOf<String>()
+        candidatePaths += suPaths
+        candidatePaths += magiskPaths
+        dangerousBinaries.forEach { bin ->
+            binaryPaths.forEach { path ->
+                candidatePaths += "$path$bin"
+            }
+        }
+        candidatePaths.filter(::isOplusMarker).forEach { path ->
+            if (File(path).exists()) {
+                found += path
+            }
+        }
+        try {
+            File("/proc/mounts").forEachLine { line ->
+                val lower = line.lowercase()
+                if (isOplusMarker(lower)) {
+                    found += line.take(160)
+                }
+            }
+        } catch (_: Exception) {}
+        return listOf(det(
+            "oplus_dirs", "Oplus / OplusEx Directories", DetectionCategory.MOUNT_POINTS, Severity.LOW,
+            "Directories and mount entries containing oplu or oplusex are treated as low severity unless direct root markers also appear",
             found.isNotEmpty(), found.joinToString("\n").ifEmpty { null }
         ))
     }
@@ -384,10 +423,11 @@ class RootDetector(private val context: Context) {
                 }
             }
         } catch (_: Exception) {}
+        val (regularSuspicious, _) = splitOplusMatches(suspicious)
         return listOf(det(
             "mount_rw", "RW System Mount Points", DetectionCategory.MOUNT_POINTS, Severity.HIGH,
             "/proc/mounts shows writable, overlaid or tmpfs-backed system partitions",
-            suspicious.isNotEmpty(), suspicious.joinToString("\n").ifEmpty { null }
+            regularSuspicious.isNotEmpty(), regularSuspicious.joinToString("\n").ifEmpty { null }
         ))
     }
 
@@ -441,10 +481,11 @@ class RootDetector(private val context: Context) {
                 }
             }
         } catch (_: Exception) {}
+        val (regularEvidence, _) = splitOplusMatches(evidence)
         return listOf(det(
             "magisk_tmpfs", "Magisk tmpfs / debug_ramdisk", DetectionCategory.MAGISK, Severity.HIGH,
             "Looks for Magisk ramdisk mirrors, tmpfs staging points and overlay-backed mounts",
-            evidence.isNotEmpty(), evidence.joinToString("\n").ifEmpty { null }
+            regularEvidence.isNotEmpty(), regularEvidence.joinToString("\n").ifEmpty { null }
         ))
     }
 
@@ -568,10 +609,11 @@ class RootDetector(private val context: Context) {
                 found += "PATH:$dir"
             }
         }
+        val (regularFound, _) = splitOplusMatches(found)
         return listOf(det(
             "su_in_path", "SU in \$PATH", DetectionCategory.SU_BINARIES, Severity.HIGH,
             "Walks PATH for su binaries and root-specific executable directories",
-            found.isNotEmpty(), found.joinToString("\n").ifEmpty { null }
+            regularFound.isNotEmpty(), regularFound.joinToString("\n").ifEmpty { null }
         ))
     }
 
@@ -636,21 +678,30 @@ class RootDetector(private val context: Context) {
                 }
             } catch (_: Exception) {}
         }
-        val filteredAnomalies = anomalies.filterNot { entry ->
-            val packageName = entry.substringBefore(" ").substringAfterLast("-> ")
-            isOplusExPackage(packageName)
-        }
+        val (regularAnomalies, _) = splitOplusMatches(anomalies)
         return listOf(det(
             "pm_anomalies", "Package Manager Check", DetectionCategory.ROOT_APPS, Severity.HIGH,
             "Scans installed packages, launch intents and known manager actions for hidden root apps",
-            filteredAnomalies.isNotEmpty(), filteredAnomalies.joinToString("\n").ifEmpty { null }
+            regularAnomalies.isNotEmpty(), regularAnomalies.joinToString("\n").ifEmpty { null }
         ))
     }
 
     private fun frameworkKeywords(): List<String> = DetectorTrust.frameworkKeywords()
 
-    private fun isOplusExPackage(packageName: String): Boolean =
-        oplusExPrefixes.any { packageName.startsWith(it, ignoreCase = true) }
+    private fun isOplusMarker(value: String): Boolean = DetectorTrust.isOplusMarker(value)
+
+    private fun splitOplusMatches(values: Collection<String>): Pair<List<String>, List<String>> {
+        val regular = mutableListOf<String>()
+        val oplus = mutableListOf<String>()
+        values.forEach { value ->
+            if (isOplusMarker(value)) {
+                oplus += value
+            } else {
+                regular += value
+            }
+        }
+        return regular to oplus
+    }
 
     private fun isPackageInstalled(pm: PackageManager, packageName: String): Boolean {
         val flagSets = listOf(
@@ -863,7 +914,7 @@ class RootDetector(private val context: Context) {
                 "overlayfs",
                 "OverlayFS System Modification",
                 DetectionCategory.MAGISK,
-                Severity.HIGH,
+                Severity.LOW,
                 "Detects overlay-backed system mounts, Magisk magic mount traces and /data/adb-backed overlays",
                 overlays.isNotEmpty(),
                 overlays.joinToString("\n").ifEmpty { null }
@@ -948,6 +999,7 @@ class RootDetector(private val context: Context) {
                 }
             }
         } catch (_: Exception) {}
+        val (regularMounts, _) = splitOplusMatches(mounts)
         return listOf(
             det(
                 "suspicious_mount",
@@ -955,8 +1007,8 @@ class RootDetector(private val context: Context) {
                 DetectionCategory.MOUNT_POINTS,
                 Severity.HIGH,
                 "System partitions should not be backed by overlay, tmpfs or loop devices",
-                mounts.isNotEmpty(),
-                mounts.joinToString("\n").ifEmpty { null }
+                regularMounts.isNotEmpty(),
+                regularMounts.joinToString("\n").ifEmpty { null }
             )
         )
     }

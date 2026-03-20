@@ -311,15 +311,16 @@ fun DetectionItemCard(item: DetectionItem) {
         Severity.MEDIUM -> MaterialTheme.colorScheme.tertiary
         Severity.LOW    -> MaterialTheme.colorScheme.primary
     }
+    val passColor = Color(0xFF2E7D32)
+    val accentColor = if (item.detected) severityColor else passColor
+    val accentContent = if (isDark) accentColor.copy(alpha = 0.88f) else accentColor
+    val accentContainer = accentColor.copy(alpha = if (isDark) 0.14f else 0.12f)
+    val accentSurface = accentColor.copy(alpha = if (isDark) 0.22f else 0.18f)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (item.detected)
-                severityColor.copy(alpha = if (isDark) 0.14f else 0.06f)
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.32f else 0.5f)
-        ),
+        colors = CardDefaults.cardColors(containerColor = accentContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         onClick = {
             if (item.detected) expanded = !expanded
@@ -334,17 +335,13 @@ fun DetectionItemCard(item: DetectionItem) {
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(
-                            if (item.detected) severityColor.copy(alpha = if (isDark) 0.24f else 0.15f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.7f else 1f)
-                        ),
+                        .background(accentSurface),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = categoryIcon(item.category),
                         contentDescription = null,
-                        tint = if (item.detected) severityColor
-                               else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        tint = accentContent,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -354,13 +351,12 @@ fun DetectionItemCard(item: DetectionItem) {
                         item.name,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (item.detected) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = accentContent
                     )
                     Text(
                         item.description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = accentContent.copy(alpha = if (isDark) 0.72f else 0.82f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -368,15 +364,14 @@ fun DetectionItemCard(item: DetectionItem) {
 
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (item.detected) severityColor.copy(alpha = if (isDark) 0.24f else 0.15f)
-                            else Color(0xFF2E7D32).copy(alpha = if (isDark) 0.2f else 0.12f)
+                    color = accentSurface
                 ) {
                     Text(
                         if (item.detected) "FOUND" else "PASS",
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (item.detected) severityColor else Color(0xFF2E7D32)
+                        color = accentContent
                     )
                 }
             }
@@ -384,21 +379,21 @@ fun DetectionItemCard(item: DetectionItem) {
             AnimatedVisibility(visible = expanded && item.detected) {
                 Column {
                     Spacer(Modifier.height(10.dp))
-                    HorizontalDivider(color = severityColor.copy(alpha = 0.2f))
+                    HorizontalDivider(color = accentContent.copy(alpha = if (isDark) 0.16f else 0.2f))
                     Spacer(Modifier.height(10.dp))
 
                     if (item.detail != null) {
                         Text(
                             "Detail",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = accentContent.copy(alpha = if (isDark) 0.78f else 0.9f),
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
                             item.detail,
                             style = MaterialTheme.typography.bodySmall,
-                            color = severityColor,
+                            color = accentContent,
                             fontFamily = FontFamily.Monospace
                         )
                         Spacer(Modifier.height(12.dp))

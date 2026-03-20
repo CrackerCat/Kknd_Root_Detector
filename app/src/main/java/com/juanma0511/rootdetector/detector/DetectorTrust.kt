@@ -20,6 +20,11 @@ object DetectorTrust {
 
     fun frameworkKeywords(): List<String> = rootKeywords
 
+    fun isOplusMarker(value: String): Boolean {
+        val lower = value.lowercase()
+        return lower.contains("oplu") || lower.contains("oplusex")
+    }
+
     fun getProp(key: String): String = try {
         val process = Runtime.getRuntime().exec("getprop $key")
         val finished = process.waitFor(1, TimeUnit.SECONDS)
@@ -50,6 +55,7 @@ object DetectorTrust {
 
     fun hasRootMountSignal(signature: String, mountPoint: String, trustedLocked: Boolean): Boolean {
         val lower = ("$mountPoint $signature").lowercase()
+        if (isOplusMarker(lower)) return false
         val keywordHit = rootPaths.any { lower.contains(it) } || rootKeywords.any { lower.contains(it) }
         if (keywordHit) return true
         val systemPartition =

@@ -39,7 +39,7 @@ class OverlayFsDetector {
             name = "OverlayFS Modification",
             description = "System partitions backed by root-specific overlay, tmpfs, loop or adb staging traces",
             category = DetectionCategory.MOUNT_POINTS,
-            severity = Severity.HIGH,
+            severity = Severity.LOW,
             detected = evidence.isNotEmpty(),
             detail = evidence.take(6).joinToString("\n").ifEmpty { null }
         )
