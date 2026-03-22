@@ -57,19 +57,20 @@ object AdvancedRuntimeDetector {
     }
 
     fun checkProcessCapabilities(): Boolean {
-
         return try {
-
             val status = File("/proc/self/status").readText()
-
-            val capLine = status.lines().firstOrNull {
-                it.startsWith("CapEff")
-            } ?: return false
-
+            val capLine = status.lines().firstOrNull { it.startsWith("CapEff") } ?: return false
             val value = capLine.split(":")[1].trim()
-
-            value != "0000000000000000"
-
+            val caps = value.toLongOrNull(16) ?: return false
+            val rootLevelCaps = 0x3fffffffffffffffL
+            val dangerousCaps = 0x0000000000000001L or
+                    0x0000000000000002L or
+                    0x0000000000000004L or
+                    0x0000000000002000L or
+                    0x0000000000004000L or
+                    0x0000000000008000L or
+                    0x0000000000200000L
+            caps and dangerousCaps != 0L || caps >= rootLevelCaps
         } catch (_: Exception) {
             false
         }

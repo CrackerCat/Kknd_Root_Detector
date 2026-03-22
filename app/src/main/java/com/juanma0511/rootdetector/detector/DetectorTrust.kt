@@ -13,9 +13,8 @@ object DetectorTrust {
     )
 
     private val rootPaths = listOf(
-        "/data/adb", "/debug_ramdisk", "/.magisk", "/sbin/.magisk",
-        "/data/adb/modules", "/data/adb/modules_update", "/data/adb/ksu",
-        "/data/adb/magisk", "/data/adb/ap", "/metadata/adb/modules", "/mnt/.magisk/modules"
+        "/debug_ramdisk", "/.magisk", "/sbin/.magisk",
+        "/metadata/adb/modules", "/mnt/.magisk/modules"
     )
 
     fun frameworkKeywords(): List<String> = rootKeywords

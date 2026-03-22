@@ -22,15 +22,19 @@ class ZygiskDetector {
         try {
             File("/proc/net/unix").forEachLine { line ->
                 if (DetectorTrust.isLikelyRuntimeInjectionEvidence(line, trustedLocked)) {
-                    evidence += line.trim().takeLast(140)
+                    val trimmed = line.trim()
+                    val path = trimmed.substringAfterLast(" ").take(140)
+                    if (path.isNotBlank()) evidence += path
                 }
             }
         } catch (_: Exception) {}
 
         try {
+            val sensitiveEnvKeys = listOf("LD_PRELOAD", "LD_LIBRARY_PATH", "JAVA_TOOL_OPTIONS")
             System.getenv().forEach { (key, value) ->
                 val entry = "$key=$value"
-                if (DetectorTrust.isLikelyRuntimeInjectionEvidence(entry, trustedLocked)) {
+                if (sensitiveEnvKeys.any { key.equals(it, ignoreCase = true) } &&
+                    DetectorTrust.isLikelyRuntimeInjectionEvidence(entry, trustedLocked)) {
                     evidence += entry.take(140)
                 }
             }
