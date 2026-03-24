@@ -82,12 +82,15 @@ class RootDetector(private val context: Context) {
             ::checkSuspiciousMountSources,
             ::checkMountInfoConsistency,
             ::checkBinderServices,
-            ::checkProcessEnvironment,
+    
             ::checkMemfdArtifacts,
             ::checkPropertyConsistency,
             ::checkHideBypassModules,
             ::checkHiddenMagiskModules,
-            ::checkHardcodedFrameworkSweep
+            ::checkHardcodedFrameworkSweep,
+            ::checkTmpfsOnData,
+            ::checkSuTimestamps,
+            ::checkApkInstallSource
         )
         val items = mutableListOf<DetectionItem>()
         val total = checks.size + 1 
@@ -863,10 +866,19 @@ class RootDetector(private val context: Context) {
 
         private fun checkProcessCapabilities(): List<DetectionItem> {
         val elevated = linkedSetOf<String>()
-        listOf("CapEff", "CapPrm", "CapBnd").forEach { field ->
-            val value = readStatusValue(field)
-            if (!value.isNullOrEmpty() && value != "0000000000000000") {
-                elevated += "$field=$value"
+        val capEff = readStatusValue("CapEff")
+        if (!capEff.isNullOrEmpty()) {
+            val caps = capEff.toLongOrNull(16) ?: 0L
+            val dangerousCaps = 0x0000000000000001L or
+                    0x0000000000000002L or
+                    0x0000000000000004L or
+                    0x0000000000002000L or
+                    0x0000000000004000L or
+                    0x0000000000008000L or
+                    0x0000000000200000L
+            val rootLevelCaps = 0x3fffffffffffffffL
+            if (caps and dangerousCaps != 0L || caps >= rootLevelCaps) {
+                elevated += "CapEff=0x$capEff (elevated effective capabilities)"
             }
         }
         return listOf(
@@ -875,7 +887,7 @@ class RootDetector(private val context: Context) {
                 "Linux Capabilities",
                 DetectionCategory.SYSTEM_PROPS,
                 Severity.HIGH,
-                "Process has non-zero effective, permitted or bounding Linux capabilities",
+                "Process has dangerous effective Linux capabilities — indicates root or escalation",
                 elevated.isNotEmpty(),
                 elevated.joinToString("\n").ifEmpty { null }
             )
@@ -930,15 +942,19 @@ class RootDetector(private val context: Context) {
 
     private fun checkBinderServices(): List<DetectionItem> {
         val suspicious = linkedSetOf<String>()
-        val serviceKeywords = HardcodedSignals.strongRuntimeKeywords + listOf("magiskd", "zygiskd", "tricky_store")
+        val exactDangerousServices = setOf(
+            "magiskd", "zygiskd", "zygisk", "tricky_store", "trickystore",
+            "ksud", "kernelsu", "lsposed", "lspd", "riru"
+        )
         try {
             val process = Runtime.getRuntime().exec("service list")
             val output = process.inputStream.bufferedReader().readText()
-            process.waitFor()
+            process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
             output.lineSequence().forEach { line ->
                 val lower = line.lowercase()
-                val hits = serviceKeywords.filter { lower.contains(it) }
-                if (hits.isNotEmpty()) {
+                if (exactDangerousServices.any { svc ->
+                    Regex("""(^|[^a-z0-9_])${Regex.escape(svc)}([^a-z0-9_]|$)""").containsMatchIn(lower)
+                }) {
                     suspicious += line.trim().take(160)
                 }
             }
@@ -949,7 +965,7 @@ class RootDetector(private val context: Context) {
                 "Runtime Service List",
                 DetectionCategory.MAGISK,
                 Severity.HIGH,
-                "Looks for root and hook framework services exposed through Android service list",
+                "Looks for exact root daemon service names in Android binder service list",
                 suspicious.isNotEmpty(),
                 suspicious.joinToString("\n").ifEmpty { null }
             )
@@ -1126,8 +1142,8 @@ class RootDetector(private val context: Context) {
         if ((verifiedBoot == "orange" || verifiedBoot == "yellow") && (flashLocked == "1" || vbmetaState == "locked")) {
             suspicious += "verified boot is $verifiedBoot while lock state looks locked"
         }
-        if (warrantyBit == "1" && (flashLocked == "1" || vbmetaState == "locked")) {
-            suspicious += "warranty bit tripped while boot state looks locked"
+        if (warrantyBit == "1" && flashLocked == "0") {
+            suspicious += "warranty bit tripped and bootloader unlocked"
         }
         if (secureBootLock == "unlocked" && flashLocked == "1") {
             suspicious += "secureboot lockstate says unlocked while flash state says locked"
@@ -1293,10 +1309,14 @@ class RootDetector(private val context: Context) {
         try {
             val process = Runtime.getRuntime().exec("service list")
             val output = process.inputStream.bufferedReader().readText()
-            process.waitFor()
+            process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
             output.lineSequence().forEach { line ->
                 val lower = line.lowercase()
-                lineageServices.filter { lower.contains(it.lowercase()) }.forEach { _ ->
+                lineageServices.filter { svc ->
+                    lower.contains(svc.lowercase()) &&
+                    !lower.contains("pixel") &&
+                    !lower.contains("google")
+                }.forEach { _ ->
                     detected += line.trim().take(160)
                 }
             }
@@ -1459,4 +1479,82 @@ class RootDetector(private val context: Context) {
             detected, indicators.joinToString("\n").ifEmpty { null }
         ))
     }
+    private fun checkTmpfsOnData(): List<DetectionItem> {
+        val found = linkedSetOf<String>()
+        try {
+            File("/proc/mounts").forEachLine { line ->
+                val parts = line.split(" ")
+                if (parts.size < 3) return@forEachLine
+                val device = parts[0]
+                val mountPoint = parts[1]
+                val fs = parts[2]
+                if (fs == "tmpfs" && (
+                    mountPoint.startsWith("/data/adb") ||
+                    mountPoint == "/debug_ramdisk" ||
+                    mountPoint.startsWith("/sbin")
+                )) {
+                    found += "$mountPoint [tmpfs from $device]"
+                }
+            }
+        } catch (_: Exception) {}
+        return listOf(det(
+            "tmpfs_data", "Suspicious tmpfs on Data Paths", DetectionCategory.MOUNT_POINTS, Severity.HIGH,
+            "tmpfs mounted over /data/adb or /debug_ramdisk is a strong Magisk/KSU staging signal",
+            found.isNotEmpty(), found.joinToString("\n").ifEmpty { null }
+        ))
+    }
+
+    private fun checkSuTimestamps(): List<DetectionItem> {
+        val suspicious = linkedSetOf<String>()
+        val recentThresholdMs = 30L * 24 * 60 * 60 * 1000
+        val now = System.currentTimeMillis()
+        val pathsToCheck = listOf(
+            "/data/adb/magisk", "/data/adb/ksu", "/data/adb/ap",
+            "/data/adb/modules", "/debug_ramdisk"
+        )
+        pathsToCheck.forEach { path ->
+            val f = java.io.File(path)
+            if (f.exists()) {
+                val age = now - f.lastModified()
+                if (age < recentThresholdMs && f.lastModified() > 0) {
+                    suspicious += "$path (modified ${age / 86400000}d ago)"
+                }
+            }
+        }
+        return listOf(det(
+            "su_timestamps", "Recent Root Artifact Timestamps", DetectionCategory.MAGISK, Severity.HIGH,
+            "Root artifacts modified within the last 30 days indicate active root installation",
+            suspicious.isNotEmpty(), suspicious.joinToString("\n").ifEmpty { null }
+        ))
+    }
+
+    private fun checkApkInstallSource(): List<DetectionItem> {
+        val suspicious = linkedSetOf<String>()
+        try {
+            val pm = context.packageManager
+            val myPackage = context.packageName
+            val installer = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                pm.getInstallSourceInfo(myPackage).installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getInstallerPackageName(myPackage)
+            }
+            val knownStores = setOf(
+                "com.android.vending", "com.google.android.packageinstaller",
+                "com.samsung.android.packageinstaller", "com.miui.packageinstaller",
+                "com.huawei.appmarket", "com.xiaomi.market"
+            )
+            if (installer == null) {
+                suspicious += "APK installed via ADB or unknown source (no installer recorded)"
+            } else if (installer !in knownStores) {
+                suspicious += "Installed by: $installer (not a known app store)"
+            }
+        } catch (_: Exception) {}
+        return listOf(det(
+            "install_source", "APK Install Source", DetectionCategory.BUILD_TAGS, Severity.LOW,
+            "Apps installed via ADB or sideloading may indicate a developer or testing environment",
+            suspicious.isNotEmpty(), suspicious.joinToString("\n").ifEmpty { null }
+        ))
+    }
+
 }
